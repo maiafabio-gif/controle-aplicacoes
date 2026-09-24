@@ -68,7 +68,7 @@
   <!-- Conteúdo Principal -->
   <main class="max-w-4xl mx-auto w-full px-4 py-5 space-y-5 flex-grow">
 
-    <!-- Seletor de Perfis Nativos com Cores -->
+    <!-- Seletor de Perfis Nativos com Cores e Memória Local -->
     <div id="userCard" class="bg-indigo-900 text-white rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors duration-300">
       <div class="flex items-center gap-3 w-full sm:w-auto">
         <i class="fa-solid fa-user-gear text-xl"></i>
@@ -333,6 +333,17 @@
     };
 
     function initApp() {
+      // MEMÓRIA LOCAL: Restaura o último perfil ativo aberto neste dispositivo
+      const savedUser = localStorage.getItem('last_active_user');
+      if (savedUser && (savedUser === 'fabio' || savedUser === 'carolina')) {
+        currentUser = savedUser;
+      }
+      
+      const userSelectEl = document.getElementById('userSelect');
+      if (userSelectEl) {
+        userSelectEl.value = currentUser;
+      }
+
       populateSelectOptions();
       setDefaultDateTime();
       applyTheme();
@@ -374,6 +385,8 @@
       document.querySelectorAll('.id-text').forEach(el => {
         el.className = el.className.replace(/text-(indigo|rose)-600/, theme.textColor);
       });
+
+      document.getElementById('userNameLabel').textContent = getUserName();
     }
 
     function getUserName() {
@@ -383,7 +396,10 @@
 
     function switchUser() {
       currentUser = document.getElementById('userSelect').value;
-      document.getElementById('userNameLabel').textContent = getUserName();
+      
+      // Salva a escolha do perfil na memória do dispositivo local
+      localStorage.setItem('last_active_user', currentUser);
+
       applyTheme();
       loadUserData();
     }
