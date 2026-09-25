@@ -1,0 +1,1100 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Controle de Aplicações Abdominais</title>
+
+  <!-- Otimizações Nativas para iPhone / Safari PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Aplicações">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/3004/3004458.png">
+
+  <!-- Tailwind CSS & FontAwesome -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  
+  <!-- SDK do Firebase 9 (Modo Compatibility) -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+    input, select, button {
+      font-size: 16px !important;
+    }
+    @keyframes pulse-ring {
+      0% { transform: scale(0.96); opacity: 0.9; }
+      50% { transform: scale(1.08); opacity: 0.4; }
+      100% { transform: scale(0.96); opacity: 0.9; }
+    }
+    .active-target {
+      animation: pulse-ring 1.8s infinite ease-in-out;
+      transform-origin: center;
+    }
+    .region-path {
+      transition: all 0.2s ease-in-out;
+      cursor: pointer;
+    }
+    .region-path:active {
+      transform: scale(0.92);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col justify-between pb-20 pt-safe">
+
+  <!-- Cabeçalho Dinâmico -->
+  <header id="appHeader" class="bg-indigo-600 text-white shadow-md pt-8 pb-4 transition-colors duration-300">
+    <div class="max-w-4xl mx-auto px-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="bg-white/10 p-2.5 rounded-xl">
+          <i class="fa-solid fa-syringe text-2xl text-white"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold leading-tight">Rodízio Abdominal</h1>
+          <p class="text-xs text-white/80" id="cloudStatus"><i class="fa-solid fa-arrows-rotate animate-spin mr-1"></i> Conectando à Nuvem...</p>
+        </div>
+      </div>
+      <button onclick="toggleInfoModal()" class="p-2 bg-white/10 hover:bg-white/20 rounded-xl text-white">
+        <i class="fa-solid fa-circle-info"></i>
+      </button>
+    </div>
+  </header>
+
+  <!-- Conteúdo Principal -->
+  <main class="max-w-4xl mx-auto w-full px-4 py-5 space-y-5 flex-grow">
+
+    <!-- Seletor de Perfis Nativos com Cores -->
+    <div id="userCard" class="bg-indigo-900 text-white rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors duration-300">
+      <div class="flex items-center gap-3 w-full sm:w-auto">
+        <i class="fa-solid fa-user-gear text-xl"></i>
+        <div>
+          <span class="text-xs opacity-80 uppercase tracking-wider font-semibold">Perfil Ativo neste Celular</span>
+          <p class="text-sm font-bold">Selecione quem vai receber a aplicação:</p>
+        </div>
+      </div>
+      <div class="w-full sm:w-64">
+        <select id="userSelect" onchange="switchUser()" class="w-full bg-white/10 text-white border border-white/20 px-3 py-2.5 rounded-xl font-bold focus:outline-none">
+          <option value="fabio" class="text-slate-800">Fábio Maia</option>
+          <option value="carolina" class="text-slate-800">Carolina Dias</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- ABA 1: ROTINA DE RODÍZIO DE APLICAÇÕES -->
+    <div id="tab-rodizio" class="space-y-5">
+      <!-- Card de Próxima Sugestão Automática -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col md:flex-row items-center justify-between gap-3">
+        <div class="flex items-center gap-4 w-full md:w-auto">
+          <div class="bg-emerald-500 text-white w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-xl shrink-0 shadow-sm">
+            <i class="fa-solid fa-location-crosshairs"></i>
+          </div>
+          <div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+              <i class="fa-solid fa-wand-magic-sparkles mr-1"></i> Sugestão Automática
+            </span>
+            <h2 id="suggestedName" class="text-lg font-bold text-slate-800 mt-0.5">Carregando...</h2>
+            <p id="suggestedDesc" class="text-xs text-slate-500">8 pontos alternados (quadrantes e transições).</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 w-full md:w-auto border-t md:border-t-0 pt-2 md:pt-0 border-slate-100">
+          <div id="stepBadge" class="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-xl text-xs font-semibold border border-indigo-100 transition-colors">
+            Etapa <span id="currentStep" class="font-bold text-sm">1</span> de 8
+          </div>
+        </div>
+      </div>
+
+      <!-- Grid: Diagrama SVG do Abdômen + Formulário -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+
+        <!-- Diagrama de Formato Abdominal Anatômico -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col items-center">
+          <h3 class="text-sm font-bold text-slate-700 mb-1 self-start flex items-center gap-2">
+            <i class="fa-solid fa-child id-icon text-indigo-500"></i> Desenho Anatômico do Abdômen
+          </h3>
+          <p class="text-xs text-slate-500 mb-2 self-start">
+            Toque no ponto para selecionar a região da aplicação.
+          </p>
+
+          <!-- SVG Interativo com Contorno de Abdômen -->
+          <div class="relative w-full max-w-[290px] aspect-square flex items-center justify-center my-1">
+            <svg viewBox="0 0 300 300" class="w-full h-full drop-shadow-sm select-none">
+              <path d="M 60,30 C 100,15 200,15 240,30 C 270,90 260,170 245,260 C 200,285 100,285 55,260 C 40,170 30,90 60,30 Z" 
+                    fill="#f8fafc" stroke="#cbd5e1" stroke-width="2.5" stroke-linejoin="round"/>
+              
+              <line x1="150" y1="35" x2="150" y2="265" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4"/>
+              <line x1="50" y1="150" x2="250" y2="150" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4"/>
+
+              <text x="75" y="55" font-size="10" font-weight="bold" fill="#94a3b8">QSD</text>
+              <text x="225" y="55" font-size="10" font-weight="bold" fill="#94a3b8" text-anchor="end">QSE</text>
+              <text x="225" y="250" font-size="10" font-weight="bold" fill="#94a3b8" text-anchor="end">QIE</text>
+              <text x="75" y="250" font-size="10" font-weight="bold" fill="#94a3b8">QID</text>
+
+              <!-- 8 PONTOS DE APLICAÇÃO -->
+              <circle id="reg-qsd" class="region-path" cx="95" cy="95" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('qsd')"/>
+              <text x="95" y="99" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">1</text>
+
+              <circle id="reg-trans-sup" class="region-path" cx="150" cy="80" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('trans-sup')"/>
+              <text x="150" y="84" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">2</text>
+
+              <circle id="reg-qse" class="region-path" cx="205" cy="95" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('qse')"/>
+              <text x="205" y="99" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">3</text>
+
+              <circle id="reg-trans-esq" class="region-path" cx="220" cy="150" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('trans-esq')"/>
+              <text x="220" y="154" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">4</text>
+
+              <circle id="reg-qie" class="region-path" cx="205" cy="205" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('qie')"/>
+              <text x="205" y="209" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">5</text>
+
+              <circle id="reg-trans-inf" class="region-path" cx="150" cy="220" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('trans-inf')"/>
+              <text x="150" y="224" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">6</text>
+
+              <circle id="reg-qid" class="region-path" cx="95" cy="205" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('qid')"/>
+              <text x="95" y="209" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">7</text>
+
+              <circle id="reg-trans-dir" class="region-path" cx="80" cy="150" r="21" fill="#e0e7ff" stroke="#6366f1" stroke-width="1.5" onclick="userOverrideRegion('trans-dir')"/>
+              <text x="80" y="154" font-size="12" font-weight="bold" fill="#3730a3" text-anchor="middle" pointer-events="none">8</text>
+
+              <circle cx="150" cy="150" r="30" fill="#fee2e2" stroke="#ef4444" stroke-width="1.5" stroke-dasharray="3"/>
+              <circle cx="150" cy="150" r="7" fill="#ef4444"/>
+              <text x="150" y="132" font-size="8" font-weight="bold" fill="#dc2626" text-anchor="middle">2 cm</text>
+              <text x="150" y="174" font-size="8" font-weight="bold" fill="#dc2626" text-anchor="middle">Proibido</text>
+            </svg>
+          </div>
+
+          <div class="flex items-center gap-4 text-xs text-slate-500 mt-1">
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 border border-emerald-700"></span> Próxima Sugerida
+            </div>
+            <div class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-amber-300 border border-amber-500"></span> Última Aplicação
+            </div>
+          </div>
+        </div>
+
+        <!-- Formulário de Registro -->
+        <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200 flex flex-col justify-between">
+          <div>
+            <h3 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+              <i class="fa-solid fa-pen-to-square id-icon text-indigo-500"></i> Registrar Aplicação
+            </h3>
+
+            <form id="appForm" onsubmit="handleSave(event)" class="space-y-3">
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Data e Hora</label>
+                <input type="datetime-local" id="inputDateTime" required class="w-full px-3 py-2.5 text-slate-800 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Local da Aplicação</label>
+                <select id="inputRegion" required class="w-full px-3 py-2.5 text-slate-800 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 bg-slate-50 font-semibold" onchange="manualSelectChange()">
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold text-slate-600 mb-1">Observações (opcional)</label>
+                <input type="text" id="inputObs" placeholder="Ex: Aplicação sem dores" class="w-full px-3 py-2.5 text-slate-800 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+              </div>
+
+              <button type="submit" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-semibold rounded-xl text-sm transition-all shadow-sm flex items-center justify-center gap-2 mt-2">
+                <i class="fa-solid fa-check-circle"></i> Confirmar Aplicação
+              </button>
+            </form>
+          </div>
+
+          <div class="mt-3 p-2.5 bg-slate-50 rounded-xl text-xs text-slate-500 border border-slate-200">
+            <i class="fa-solid fa-cloud text-emerald-500 mr-1"></i> Sincronização automática via Firebase.
+          </div>
+        </div>
+      </div>
+
+      <!-- Tabela de Histórico -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+          <div>
+            <h3 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+              <i class="fa-solid fa-file-medical id-icon text-indigo-500"></i> Histórico: <span id="userNameLabel" class="id-text font-bold text-indigo-600">Fábio Maia</span>
+            </h3>
+          </div>
+          
+          <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button onclick="exportCSV()" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all">
+              <i class="fa-solid fa-file-csv text-emerald-600"></i> Baixar CSV
+            </button>
+            <button onclick="clearHistory()" class="px-3 py-1.5 text-rose-500 hover:bg-rose-50 rounded-lg text-xs font-semibold transition-all">
+              Limpar
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr class="border-b border-slate-200 text-slate-400 font-semibold uppercase">
+                <th class="py-2 px-2">Data/Hora</th>
+                <th class="py-2 px-2">Local</th>
+                <th class="py-2 px-2">Obs</th>
+                <th class="py-2 px-2 text-right">Ação</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody" class="divide-y divide-slate-100 text-slate-600">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ABA 2: AGENDA DE APLICAÇÕES E CALENDÁRIO -->
+    <div id="tab-agenda" class="space-y-5 hidden">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
+        <div>
+          <h2 class="text-base font-bold text-slate-800 flex items-center gap-2">
+            <i class="fa-regular fa-calendar-check id-icon text-indigo-500"></i> Agenda & Medicamentos
+          </h2>
+          <p class="text-xs text-slate-500">Configure seus injetáveis, notificações e alarmes do celular.</p>
+        </div>
+        <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+          <button onclick="requestNotificationPermission()" class="px-3 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm">
+            <i class="fa-solid fa-bell"></i> Ativar Notificações
+          </button>
+          <button onclick="toggleScheduleModal(true)" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm">
+            <i class="fa-solid fa-plus"></i> Novo Injetável
+          </button>
+        </div>
+      </div>
+
+      <!-- Lista de Injetáveis Agendados -->
+      <div id="medicationList" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Injetáveis cadastrados aparecem aqui -->
+      </div>
+
+      <!-- Visualização do Calendário Mensal -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200">
+        <div class="flex items-center justify-between mb-4">
+          <button onclick="changeMonth(-1)" class="p-2 hover:bg-slate-100 rounded-xl text-slate-600"><i class="fa-solid fa-chevron-left"></i></button>
+          <h3 id="calendarMonthYear" class="text-sm font-bold text-slate-800 capitalize">Setembro 2026</h3>
+          <button onclick="changeMonth(1)" class="p-2 hover:bg-slate-100 rounded-xl text-slate-600"><i class="fa-solid fa-chevron-right"></i></button>
+        </div>
+
+        <div class="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-slate-400 mb-2">
+          <div>Dom</div><div>Seg</div><div>Ter</div><div>Qua</div><div>Qui</div><div>Sex</div><div>Sáb</div>
+        </div>
+
+        <div id="calendarGrid" class="grid grid-cols-7 gap-1 text-xs">
+          <!-- Dias do calendário renderizados via JS -->
+        </div>
+      </div>
+
+      <!-- Detalhes do Dia Selecionado -->
+      <div id="dayDetailsCard" class="bg-slate-100 rounded-2xl p-4 border border-slate-200 space-y-3">
+        <h4 id="selectedDayTitle" class="text-xs font-bold text-slate-700 uppercase tracking-wider">Aplicações Previstas</h4>
+        <div id="selectedDayList" class="space-y-2">
+          <p class="text-xs text-slate-500">Selecione um dia no calendário acima para visualizar os remédios agendados.</p>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- NAVEGAÇÃO INFERIOR / TABS -->
+  <nav class="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 px-6 py-2 flex justify-around items-center z-40">
+    <button onclick="switchTab('rodizio')" id="nav-btn-rodizio" class="flex flex-col items-center gap-1 text-indigo-600 font-bold transition-all">
+      <i class="fa-solid fa-syringe text-lg"></i>
+      <span class="text-[10px]">Rodízio</span>
+    </button>
+    <button onclick="switchTab('agenda')" id="nav-btn-agenda" class="flex flex-col items-center gap-1 text-slate-400 font-medium transition-all">
+      <i class="fa-regular fa-calendar-days text-lg"></i>
+      <span class="text-[10px]">Agenda</span>
+    </button>
+  </nav>
+
+  <!-- MODAL: CADASTRAR/EDITAR INJETÁVEL E RECORRÊNCIA -->
+  <div id="scheduleModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl p-5 max-w-md w-full shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b pb-3">
+        <h3 class="text-sm font-bold text-slate-800"><i class="fa-solid fa-pills text-indigo-500 mr-1.5"></i> Agendar Medicamento Injetável</h3>
+        <button onclick="toggleScheduleModal(false)" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <form id="scheduleForm" onsubmit="saveSchedule(event)" class="space-y-3">
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Nome do Medicamento</label>
+          <input type="text" id="schedName" required placeholder="Ex: Ozempic, Mounjaro, Saxenda" class="w-full px-3 py-2 text-slate-800 border border-slate-300 rounded-xl focus:outline-none">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Dose / Quantidade</label>
+          <input type="text" id="schedDose" placeholder="Ex: 0.5mg, 1ml" class="w-full px-3 py-2 text-slate-800 border border-slate-300 rounded-xl focus:outline-none">
+        </div>
+
+        <div class="grid grid-cols-2 gap-2">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Primeira Aplicação</label>
+            <input type="date" id="schedStartDate" required class="w-full px-3 py-2 text-slate-800 border border-slate-300 rounded-xl focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">Horário do Alerta</label>
+            <input type="time" id="schedTime" value="08:00" required class="w-full px-3 py-2 text-slate-800 border border-slate-300 rounded-xl focus:outline-none">
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Frequência de Repetição</label>
+          <select id="schedRecurrence" class="w-full px-3 py-2 text-slate-800 border border-slate-300 rounded-xl focus:outline-none font-semibold bg-slate-50" onchange="toggleRecurrenceFields()">
+            <option value="daily">Diário (Todos os dias)</option>
+            <option value="interval">A cada X dias (Ex: a cada 7 dias)</option>
+            <option value="weekly_days">Dias específicos da semana (Ex: Seg, Qua, Sex)</option>
+            <option value="monthly">Mensalmente (Mesmo dia do mês)</option>
+          </select>
+        </div>
+
+        <!-- Campo Dinâmico: Intervalo de Dias -->
+        <div id="fieldInterval" class="hidden">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Repetir a cada quantos dias?</label>
+          <input type="number" id="schedIntervalDays" min="1" value="7" class="w-full px-3 py-2 text-slate-800 border border-slate-300 rounded-xl focus:outline-none">
+        </div>
+
+        <!-- Campo Dinâmico: Dias da Semana -->
+        <div id="fieldWeeklyDays" class="hidden">
+          <label class="block text-xs font-semibold text-slate-600 mb-1">Escolha os dias da semana:</label>
+          <div class="grid grid-cols-7 gap-1 text-center text-xs">
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="0"><br>Dom</label>
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="1"><br>Seg</label>
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="2"><br>Ter</label>
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="3"><br>Qua</label>
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="4"><br>Qui</label>
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="5"><br>Sex</label>
+            <label class="p-2 border rounded-lg cursor-pointer"><input type="checkbox" name="weekDay" value="6"><br>Sáb</label>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" onclick="toggleScheduleModal(false)" class="px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-100 rounded-xl">Cancelar</button>
+          <button type="submit" class="px-4 py-2 text-xs font-semibold bg-indigo-600 text-white rounded-xl">Salvar Agendamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal Informativo -->
+  <div id="infoModal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+    <div class="bg-white rounded-2xl p-5 max-w-md w-full shadow-xl space-y-4">
+      <div class="flex items-center justify-between border-b pb-3">
+        <h3 class="text-sm font-bold text-slate-800">Status da Conexão em Nuvem</h3>
+        <button onclick="toggleInfoModal()" class="text-slate-400 hover:text-slate-600"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <p class="text-xs text-slate-600 leading-relaxed">
+        Este aplicativo está pré-configurado com o projeto <strong>controle-aplicacoes-18e00</strong>. O perfil ativo é salvo na memória local do dispositivo para que abra sempre no seu usuário.
+      </p>
+      <div class="flex justify-end">
+        <button onclick="toggleInfoModal()" class="px-4 py-2 text-xs font-semibold bg-indigo-600 text-white rounded-xl">Entendi</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // CONFIGURAÇÃO DO SEU PROJETO FIREBASE
+    const firebaseConfig = {
+      apiKey: "AIzaSyDk4gt5eut9W_SiPse2UhP8kW3W3TgJ4DQ",
+      authDomain: "controle-aplicacoes-18e00.firebaseapp.com",
+      projectId: "controle-aplicacoes-18e00",
+      storageBucket: "controle-aplicacoes-18e00.firebasestorage.app",
+      messagingSenderId: "2705682738",
+      appId: "1:2705682738:web:9f7c328b180d8707c5e72b"
+    };
+
+    // 8 PONTOS DE RODÍZIO
+    const REGIONS = [
+      { id: 'qsd', step: 1, name: 'Ponto 1 - QSD', desc: 'Quadrante Superior Direito' },
+      { id: 'trans-sup', step: 2, name: 'Ponto 2 - Transição Superior', desc: 'Região Superior entre QSD e QSE' },
+      { id: 'qse', step: 3, name: 'Ponto 3 - QSE', desc: 'Quadrante Superior Esquerdo' },
+      { id: 'trans-esq', step: 4, name: 'Ponto 4 - Transição Esquerda', desc: 'Região Lateral entre QSE e QIE' },
+      { id: 'qie', step: 5, name: 'Ponto 5 - QIE', desc: 'Quadrante Inferior Esquerdo' },
+      { id: 'trans-inf', step: 6, name: 'Ponto 6 - Transição Inferior', desc: 'Região Inferior entre QIE e QID' },
+      { id: 'qid', step: 7, name: 'Ponto 7 - QID', desc: 'Quadrante Inferior Direito' },
+      { id: 'trans-dir', step: 8, name: 'Ponto 8 - Transição Direita', desc: 'Região Lateral entre QID e QSD' }
+    ];
+
+    let currentUser = 'fabio';
+    let history = [];
+    let schedules = [];
+    let db = null;
+    let unsubscribeListener = null;
+
+    let currentDateCalendar = new Date();
+    let selectedCalendarDateStr = null;
+
+    const THEMES = {
+      fabio: {
+        headerBg: 'bg-indigo-600',
+        userCardBg: 'bg-indigo-900',
+        badgeBg: 'bg-indigo-50',
+        badgeText: 'text-indigo-700',
+        badgeBorder: 'border-indigo-100',
+        textColor: 'text-indigo-600',
+        iconColor: 'text-indigo-500',
+        badgeHistory: 'bg-indigo-50 text-indigo-700 border-indigo-100',
+        svgFill: '#e0e7ff',
+        svgStroke: '#6366f1'
+      },
+      carolina: {
+        headerBg: 'bg-rose-600',
+        userCardBg: 'bg-rose-900',
+        badgeBg: 'bg-rose-50',
+        badgeText: 'text-rose-700',
+        badgeBorder: 'border-rose-100',
+        textColor: 'text-rose-600',
+        iconColor: 'text-rose-500',
+        badgeHistory: 'bg-rose-50 text-rose-700 border-rose-100',
+        svgFill: '#ffe4e6',
+        svgStroke: '#f43f5e'
+      }
+    };
+
+    function initApp() {
+      const savedUser = localStorage.getItem('last_active_user');
+      if (savedUser && (savedUser === 'fabio' || savedUser === 'carolina')) {
+        currentUser = savedUser;
+      }
+      document.getElementById('userSelect').value = currentUser;
+
+      populateSelectOptions();
+      setDefaultDateTime();
+      applyTheme();
+      initFirebase();
+      
+      const todayISO = new Date().toISOString().slice(0, 10);
+      document.getElementById('schedStartDate').value = todayISO;
+      selectCalendarDate(todayISO);
+
+      checkNotificationTrigger();
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', initApp);
+    } else {
+      initApp();
+    }
+
+    function initFirebase() {
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+        db = firebase.firestore();
+        document.getElementById('cloudStatus').innerHTML = '<i class="fa-solid fa-cloud-check text-emerald-300 mr-1"></i> Nuvem Conectada';
+        loadUserData();
+      } catch (e) {
+        console.error("Erro no Firebase:", e);
+        document.getElementById('cloudStatus').innerHTML = '<i class="fa-solid fa-triangle-exclamation text-amber-300 mr-1"></i> Modo Off-line Local';
+        loadUserDataFallback();
+      }
+    }
+
+    function applyTheme() {
+      const theme = THEMES[currentUser];
+      
+      document.getElementById('appHeader').className = `${theme.headerBg} text-white shadow-md pt-8 pb-4 transition-colors duration-300`;
+      document.getElementById('userCard').className = `${theme.userCardBg} text-white rounded-2xl p-4 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3 transition-colors duration-300`;
+      document.getElementById('stepBadge').className = `${theme.badgeBg} ${theme.badgeText} px-3 py-1 rounded-xl text-xs font-semibold border ${theme.badgeBorder} transition-colors`;
+      document.getElementById('userNameLabel').textContent = getUserName();
+
+      document.querySelectorAll('.id-icon').forEach(el => {
+        el.className = el.className.replace(/text-(indigo|rose)-500/, theme.iconColor);
+      });
+
+      document.querySelectorAll('.id-text').forEach(el => {
+        el.className = el.className.replace(/text-(indigo|rose)-600/, theme.textColor);
+      });
+    }
+
+    function getUserName() {
+      const select = document.getElementById('userSelect');
+      return select.options[select.selectedIndex].text;
+    }
+
+    function switchUser() {
+      currentUser = document.getElementById('userSelect').value;
+      localStorage.setItem('last_active_user', currentUser);
+      applyTheme();
+      loadUserData();
+    }
+
+    function switchTab(tab) {
+      const tabRodizio = document.getElementById('tab-rodizio');
+      const tabAgenda = document.getElementById('tab-agenda');
+      const btnRodizio = document.getElementById('nav-btn-rodizio');
+      const btnAgenda = document.getElementById('nav-btn-agenda');
+      const theme = THEMES[currentUser];
+
+      if (tab === 'rodizio') {
+        tabRodizio.classList.remove('hidden');
+        tabAgenda.classList.add('hidden');
+        btnRodizio.className = `flex flex-col items-center gap-1 ${theme.textColor} font-bold transition-all`;
+        btnAgenda.className = "flex flex-col items-center gap-1 text-slate-400 font-medium transition-all";
+      } else {
+        tabRodizio.classList.add('hidden');
+        tabAgenda.classList.remove('hidden');
+        btnAgenda.className = `flex flex-col items-center gap-1 ${theme.textColor} font-bold transition-all`;
+        btnRodizio.className = "flex flex-col items-center gap-1 text-slate-400 font-medium transition-all";
+        renderCalendar();
+        renderSchedulesList();
+      }
+    }
+
+    function loadUserData() {
+      if (unsubscribeListener) unsubscribeListener();
+
+      if (db) {
+        unsubscribeListener = db.collection('historico').doc(currentUser).onSnapshot((doc) => {
+          if (doc.exists) {
+            const data = doc.data();
+            history = data.records || [];
+            schedules = data.schedules || [];
+          } else {
+            history = [];
+            schedules = [];
+          }
+          applyAutoRotation();
+          renderCalendar();
+          renderSchedulesList();
+        }, (error) => {
+          console.error("Erro nas regras do Firebase:", error);
+          loadUserDataFallback();
+        });
+      } else {
+        loadUserDataFallback();
+      }
+    }
+
+    function loadUserDataFallback() {
+      history = JSON.parse(localStorage.getItem(`app_rotina_history_${currentUser}`)) || [];
+      schedules = JSON.parse(localStorage.getItem(`app_rotina_schedules_${currentUser}`)) || [];
+      applyAutoRotation();
+      renderCalendar();
+      renderSchedulesList();
+    }
+
+    function saveUserData() {
+      if (db) {
+        db.collection('historico').doc(currentUser).set({ records: history, schedules: schedules })
+          .catch(err => {
+            console.error("Erro ao salvar no Firebase:", err);
+            saveUserDataFallback();
+          });
+      } else {
+        saveUserDataFallback();
+      }
+    }
+
+    function saveUserDataFallback() {
+      localStorage.setItem(`app_rotina_history_${currentUser}`, JSON.stringify(history));
+      localStorage.setItem(`app_rotina_schedules_${currentUser}`, JSON.stringify(schedules));
+    }
+
+    function setDefaultDateTime() {
+      const now = new Date();
+      now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+      document.getElementById('inputDateTime').value = now.toISOString().slice(0, 16);
+    }
+
+    function populateSelectOptions() {
+      const select = document.getElementById('inputRegion');
+      select.innerHTML = '';
+      REGIONS.forEach(reg => {
+        const opt = document.createElement('option');
+        opt.value = reg.id;
+        opt.textContent = reg.name;
+        select.appendChild(opt);
+      });
+    }
+
+    function getNextAutoRegion() {
+      if (!history || history.length === 0) return REGIONS[0];
+      const lastRegId = history[0].regionId;
+      const lastIndex = REGIONS.findIndex(r => r.id === lastRegId);
+      if (lastIndex === -1) return REGIONS[0];
+      const nextIndex = (lastIndex + 1) % REGIONS.length;
+      return REGIONS[nextIndex];
+    }
+
+    function applyAutoRotation() {
+      const autoReg = getNextAutoRegion();
+      updateUI(autoReg);
+    }
+
+    function updateUI(regionObj) {
+      document.getElementById('suggestedName').textContent = regionObj.name;
+      document.getElementById('suggestedDesc').textContent = regionObj.desc;
+      document.getElementById('currentStep').textContent = regionObj.step;
+      document.getElementById('inputRegion').value = regionObj.id;
+
+      updateSvgVisuals(regionObj.id);
+      renderHistoryTable();
+    }
+
+    function updateSvgVisuals(targetId) {
+      const lastRegId = history && history.length > 0 ? history[0].regionId : null;
+      const theme = THEMES[currentUser];
+
+      REGIONS.forEach(reg => {
+        const el = document.getElementById(`reg-${reg.id}`);
+        if (!el) return;
+
+        el.classList.remove('active-target');
+
+        if (reg.id === targetId) {
+          el.setAttribute('fill', '#10b981');
+          el.setAttribute('stroke', '#047857');
+          el.classList.add('active-target');
+        } else if (reg.id === lastRegId) {
+          el.setAttribute('fill', '#fcd34d');
+          el.setAttribute('stroke', '#d97706');
+        } else {
+          el.setAttribute('fill', theme.svgFill);
+          el.setAttribute('stroke', theme.svgStroke);
+        }
+      });
+    }
+
+    function userOverrideRegion(regionId) {
+      const reg = REGIONS.find(r => r.id === regionId);
+      if (reg) updateUI(reg);
+    }
+
+    function manualSelectChange() {
+      const val = document.getElementById('inputRegion').value;
+      userOverrideRegion(val);
+    }
+
+    function handleSave(event) {
+      event.preventDefault();
+
+      const dt = document.getElementById('inputDateTime').value;
+      const regionId = document.getElementById('inputRegion').value;
+      const obs = document.getElementById('inputObs').value;
+
+      if (!dt || !regionId) return;
+
+      const newRecord = {
+        id: Date.now(),
+        datetime: dt,
+        regionId: regionId,
+        obs: obs
+      };
+
+      history.unshift(newRecord);
+      saveUserData();
+
+      document.getElementById('inputObs').value = '';
+      setDefaultDateTime();
+      applyAutoRotation();
+      renderCalendar();
+    }
+
+    function deleteRecord(id) {
+      history = history.filter(item => item.id !== id);
+      saveUserData();
+      applyAutoRotation();
+      renderCalendar();
+    }
+
+    function clearHistory() {
+      if (confirm(`Deseja limpar todo o histórico de ${getUserName()}?`)) {
+        history = [];
+        saveUserData();
+        applyAutoRotation();
+        renderCalendar();
+      }
+    }
+
+    function exportCSV() {
+      if (!history || history.length === 0) {
+        alert('Não há registros para exportar.');
+        return;
+      }
+
+      let csvContent = "data:text/csv;charset=utf-8,Data e Hora,Local da Aplicacao,Observacao\n";
+
+      history.forEach(item => {
+        const reg = REGIONS.find(r => r.id === item.regionId) || { name: item.regionId };
+        const dateObj = new Date(item.datetime);
+        const formattedDate = dateObj.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+        const cleanObs = (item.obs || '').replace(/,/g, ' ');
+
+        csvContent += `"${formattedDate}","${reg.name}","${cleanObs}"\n`;
+      });
+
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `historico_${currentUser}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    function renderHistoryTable() {
+      const tbody = document.getElementById('historyTableBody');
+      tbody.innerHTML = '';
+      const theme = THEMES[currentUser];
+
+      if (!history || history.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-400">Nenhum registro para ${getUserName()}.</td></tr>`;
+        return;
+      }
+
+      history.forEach(item => {
+        const reg = REGIONS.find(r => r.id === item.regionId) || { name: item.regionId };
+        const dateObj = new Date(item.datetime);
+        const formattedDate = dateObj.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="py-2 px-2 font-medium text-slate-700">${formattedDate}</td>
+          <td class="py-2 px-2"><span class="${theme.badgeHistory} font-semibold px-1.5 py-0.5 rounded border">${reg.name}</span></td>
+          <td class="py-2 px-2 text-slate-500">${item.obs || '-'}</td>
+          <td class="py-2 px-2 text-right">
+            <button onclick="deleteRecord(${item.id})" class="text-rose-400 hover:text-rose-600 px-1 py-0.5">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // --- SISTEMA INTEGADO DE NOTIFICAÇÕES & AGENDAS ---
+
+    // OPÇÃO 2: NOTIFICAÇÕES NATIVAS
+    function requestNotificationPermission() {
+      if (!("Notification" in window)) {
+        alert("Este navegador não suporta notificações de sistema.");
+        return;
+      }
+      Notification.requestPermission().then((perm) => {
+        if (perm === "granted") {
+          alert("Notificações ativadas com sucesso!");
+          new Notification("Controle de Aplicações", {
+            body: "Você receberá alertas para suas aplicações agendadas.",
+            icon: "https://cdn-icons-png.flaticon.com/512/3004/3004458.png"
+          });
+        } else {
+          alert("Permissão para notificações foi negada.");
+        }
+      });
+    }
+
+    function checkNotificationTrigger() {
+      if ("Notification" in window && Notification.permission === "granted") {
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const daySchedules = schedules.filter(s => isMedicationScheduledOnDate(s, todayStr));
+        const dayHistory = history.filter(h => h.datetime.startsWith(todayStr));
+
+        if (daySchedules.length > dayHistory.length) {
+          const pending = daySchedules[0];
+          new Notification(`Lembrete de Aplicação: ${pending.name}`, {
+            body: `Olá ${getUserName()}, você tem uma aplicação de ${pending.name} (${pending.dose}) agendada para hoje!`,
+            icon: "https://cdn-icons-png.flaticon.com/512/3004/3004458.png"
+          });
+        }
+      }
+    }
+
+    // OPÇÃO 1: EXPORTAR PARA CALENDÁRIO NATIVO (.ICS)
+    function exportToAppleOrGoogleCalendar(id) {
+      const s = schedules.find(item => item.id === id);
+      if (!s) return;
+
+      const dateParts = s.startDate.split('-');
+      const timeParts = (s.time || '08:00').split(':');
+
+      const dtStart = `${dateParts[0]}${dateParts[1]}${dateParts[2]}T${timeParts[0]}${timeParts[1]}00`;
+      
+      let rrule = "FREQ=DAILY";
+      if (s.recurrence === 'interval') rrule = `FREQ=DAILY;INTERVAL=${s.intervalDays}`;
+      if (s.recurrence === 'monthly') rrule = "FREQ=MONTHLY";
+      if (s.recurrence === 'weekly_days') rrule = "FREQ=WEEKLY";
+
+      const icsData = 
+`BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Aplicação Injetável//PT-BR
+BEGIN:VEVENT
+SUMMARY:Aplicação: ${s.name} (${s.dose})
+DESCRIPTION:Lembrete de aplicação de medicamento injetável para ${getUserName()}.
+DTSTART:${dtStart}
+RRULE:${rrule}
+BEGIN:VALARM
+TRIGGER:-PT15M
+ACTION:DISPLAY
+DESCRIPTION:Lembrete de aplicação
+END:VALARM
+END:VEVENT
+END:VCALENDAR`;
+
+      const blob = new Blob([icsData], { type: 'text/calendar;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `${s.name}_calendario.ics`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // OPÇÃO 3: ENVIAR LEMBRETE VIA WHATSAPP / LEMBRETES
+    function sendWhatsAppReminder(id) {
+      const s = schedules.find(item => item.id === id);
+      if (!s) return;
+
+      const autoReg = getNextAutoRegion();
+      const text = encodeURIComponent(
+        `📌 *Lembrete de Aplicação Injetável*\n\n` +
+        `👤 *Paciente:* ${getUserName()}\n` +
+        `💉 *Medicamento:* ${s.name} (${s.dose || 'dose padrão'})\n` +
+        `🎯 *Sugestão de Local:* ${autoReg.name} (${autoReg.desc})\n` +
+        `⏰ *Horário:* ${s.time || '08:00'}\n\n` +
+        `Não se esqueça de registrar no aplicativo após aplicar!`
+      );
+
+      window.open(`https://wa.me/?text=${text}`, '_blank');
+    }
+
+    // --- RECORRÊNCIA E CALENDÁRIO ---
+
+    function toggleScheduleModal(show) {
+      document.getElementById('scheduleModal').classList.toggle('hidden', !show);
+    }
+
+    function toggleRecurrenceFields() {
+      const val = document.getElementById('schedRecurrence').value;
+      document.getElementById('fieldInterval').classList.toggle('hidden', val !== 'interval');
+      document.getElementById('fieldWeeklyDays').classList.toggle('hidden', val !== 'weekly_days');
+    }
+
+    function saveSchedule(e) {
+      e.preventDefault();
+      const name = document.getElementById('schedName').value;
+      const dose = document.getElementById('schedDose').value;
+      const startDate = document.getElementById('schedStartDate').value;
+      const time = document.getElementById('schedTime').value || '08:00';
+      const recurrence = document.getElementById('schedRecurrence').value;
+      const intervalDays = parseInt(document.getElementById('schedIntervalDays').value) || 7;
+
+      const checkedWeekDays = [];
+      document.querySelectorAll('input[name="weekDay"]:checked').forEach(cb => {
+        checkedWeekDays.push(parseInt(cb.value));
+      });
+
+      const newSched = {
+        id: Date.now(),
+        name,
+        dose,
+        startDate,
+        time,
+        recurrence,
+        intervalDays,
+        weekDays: checkedWeekDays
+      };
+
+      schedules.push(newSched);
+      saveUserData();
+      toggleScheduleModal(false);
+      renderSchedulesList();
+      renderCalendar();
+      document.getElementById('scheduleForm').reset();
+    }
+
+    function deleteSchedule(id) {
+      if (confirm('Deseja excluir este medicamento agendado?')) {
+        schedules = schedules.filter(s => s.id !== id);
+        saveUserData();
+        renderSchedulesList();
+        renderCalendar();
+      }
+    }
+
+    function renderSchedulesList() {
+      const container = document.getElementById('medicationList');
+      container.innerHTML = '';
+
+      if (!schedules || schedules.length === 0) {
+        container.innerHTML = `<div class="col-span-2 bg-white p-4 rounded-xl text-center text-xs text-slate-400 border border-slate-200">Nenhum medicamento recorrente agendado ainda.</div>`;
+        return;
+      }
+
+      schedules.forEach(s => {
+        let recText = "Diário";
+        if (s.recurrence === 'interval') recText = `A cada ${s.intervalDays} dias`;
+        if (s.recurrence === 'monthly') recText = "Mensalmente";
+        if (s.recurrence === 'weekly_days') recText = "Dias específicos";
+
+        const div = document.createElement('div');
+        div.className = "bg-white p-3 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between gap-3";
+        div.innerHTML = `
+          <div class="flex items-start justify-between">
+            <div>
+              <span class="text-[10px] uppercase font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-100">${recText} às ${s.time || '08:00'}</span>
+              <h4 class="font-bold text-sm text-slate-800 mt-1">${s.name} <span class="text-xs font-normal text-slate-500">(${s.dose || 'sem dose'})</span></h4>
+              <p class="text-xs text-slate-400">Início: ${s.startDate}</p>
+            </div>
+            <button onclick="deleteSchedule(${s.id})" class="p-1 text-rose-400 hover:text-rose-600">
+              <i class="fa-solid fa-trash-can"></i>
+            </button>
+          </div>
+
+          <div class="flex items-center gap-2 border-t pt-2">
+            <button onclick="exportToAppleOrGoogleCalendar(${s.id})" class="flex-1 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1">
+              <i class="fa-regular fa-calendar-plus text-indigo-500"></i> Apple/Google Calendar
+            </button>
+            <button onclick="sendWhatsAppReminder(${s.id})" class="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1 border border-emerald-200">
+              <i class="fa-brands fa-whatsapp text-emerald-600"></i> WhatsApp
+            </button>
+          </div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    function isMedicationScheduledOnDate(sched, targetDateStr) {
+      const start = new Date(sched.startDate + "T00:00:00");
+      const target = new Date(targetDateStr + "T00:00:00");
+
+      if (target < start) return false;
+
+      const diffTime = target - start;
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+
+      if (sched.recurrence === 'daily') return true;
+      if (sched.recurrence === 'interval') return diffDays % sched.intervalDays === 0;
+      if (sched.recurrence === 'monthly') return target.getDate() === start.getDate();
+      if (sched.recurrence === 'weekly_days') return sched.weekDays.includes(target.getDay());
+
+      return false;
+    }
+
+    function changeMonth(delta) {
+      currentDateCalendar.setMonth(currentDateCalendar.getMonth() + delta);
+      renderCalendar();
+    }
+
+    function renderCalendar() {
+      const monthYearText = document.getElementById('calendarMonthYear');
+      const grid = document.getElementById('calendarGrid');
+      grid.innerHTML = '';
+
+      const year = currentDateCalendar.getFullYear();
+      const month = currentDateCalendar.getMonth();
+
+      const monthNames = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+      monthYearText.textContent = `${monthNames[month]} ${year}`;
+
+      const firstDay = new Date(year, month, 1).getDay();
+      const totalDays = new Date(year, month + 1, 0).getDate();
+
+      // Espaços em branco
+      for (let i = 0; i < firstDay; i++) {
+        const empty = document.createElement('div');
+        empty.className = "h-10";
+        grid.appendChild(empty);
+      }
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      for (let day = 1; day <= totalDays; day++) {
+        const monthFormatted = String(month + 1).padStart(2, '0');
+        const dayFormatted = String(day).padStart(2, '0');
+        const dateStr = `${year}-${monthFormatted}-${dayFormatted}`;
+
+        const isToday = dateStr === todayStr;
+        const isSelected = dateStr === selectedCalendarDateStr;
+
+        // Verifica se tem agendamentos no dia
+        const hasSchedule = schedules.some(s => isMedicationScheduledOnDate(s, dateStr));
+        const hasHistory = history.some(h => h.datetime.startsWith(dateStr));
+
+        const cell = document.createElement('div');
+        cell.onclick = () => selectCalendarDate(dateStr);
+        cell.className = `h-10 rounded-xl flex flex-col items-center justify-center cursor-pointer relative border ${
+          isSelected ? 'border-indigo-600 bg-indigo-50 font-bold' : isToday ? 'border-amber-400 bg-amber-50 font-bold' : 'border-slate-100 bg-slate-50'
+        }`;
+
+        cell.innerHTML = `
+          <span class="text-xs ${isSelected ? 'text-indigo-600' : 'text-slate-700'}">${day}</span>
+          <div class="flex gap-1 mt-0.5">
+            ${hasSchedule ? '<span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>' : ''}
+            ${hasHistory ? '<span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>' : ''}
+          </div>
+        `;
+
+        grid.appendChild(cell);
+      }
+    }
+
+    function selectCalendarDate(dateStr) {
+      selectedCalendarDateStr = dateStr;
+      renderCalendar();
+
+      const title = document.getElementById('selectedDayTitle');
+      const list = document.getElementById('selectedDayList');
+
+      const dateObj = new Date(dateStr + "T00:00:00");
+      title.textContent = `Aplicações do dia: ${dateObj.toLocaleDateString('pt-BR')}`;
+      list.innerHTML = '';
+
+      const daySchedules = schedules.filter(s => isMedicationScheduledOnDate(s, dateStr));
+      const dayHistory = history.filter(h => h.datetime.startsWith(dateStr));
+
+      if (daySchedules.length === 0 && dayHistory.length === 0) {
+        list.innerHTML = `<p class="text-xs text-slate-400">Nenhuma aplicação ou agendamento para este dia.</p>`;
+        return;
+      }
+
+      daySchedules.forEach(s => {
+        const isDone = dayHistory.length > 0;
+        const div = document.createElement('div');
+        div.className = "bg-white p-3 rounded-xl border border-slate-200 flex items-center justify-between";
+        div.innerHTML = `
+          <div>
+            <span class="text-[10px] font-bold text-slate-500">AGENDADO (${s.time || '08:00'})</span>
+            <p class="font-bold text-xs text-slate-800">${s.name} (${s.dose})</p>
+          </div>
+          ${isDone ? '<span class="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg"><i class="fa-solid fa-check mr-1"></i> Aplicado</span>' : 
+                     `<button onclick="quickApplyFromSchedule('${s.name}')" class="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold">Aplicar Agora</button>`}
+        `;
+        list.appendChild(div);
+      });
+
+      dayHistory.forEach(h => {
+        const reg = REGIONS.find(r => r.id === h.regionId) || { name: h.regionId };
+        const timeStr = new Date(h.datetime).toLocaleTimeString('pt-BR', { timeStyle: 'short' });
+        const div = document.createElement('div');
+        div.className = "bg-emerald-50 border border-emerald-200 p-3 rounded-xl flex items-center justify-between";
+        div.innerHTML = `
+          <div>
+            <span class="text-[10px] font-bold text-emerald-700">CONCLUÍDO às ${timeStr}</span>
+            <p class="font-bold text-xs text-slate-800">${reg.name}</p>
+            ${h.obs ? `<p class="text-[10px] text-slate-500">${h.obs}</p>` : ''}
+          </div>
+          <i class="fa-solid fa-circle-check text-emerald-500 text-lg"></i>
+        `;
+        list.appendChild(div);
+      });
+    }
+
+    function quickApplyFromSchedule(medName) {
+      switchTab('rodizio');
+      document.getElementById('inputObs').value = `Injetável: ${medName}`;
+    }
+
+    function toggleInfoModal() {
+      document.getElementById('infoModal').classList.toggle('hidden');
+    }
+  </script>
+</body>
+</html>
